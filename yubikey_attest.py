@@ -148,11 +148,11 @@ def check_public_key(csr, attestation_cert, StatusKeeper):
         format=serialization.PublicFormat.SubjectPublicKeyInfo
     )
     if csr_public_key_bytes == attestation_public_key_bytes:
-        print("✅ Public key in CSR and attestation certificate are the same." + '\n')
-        StatusKeeper.MATCH_Does_the_public_key_from_CSR_equal_the_public_key_from_the_Attestation_Certificate_FromSlot = True
+        print(f"✅ Public key in CSR and attestation certificate are the same." + '\n' + f"({StatusKeeper.Filename.csr} <-pub-> {StatusKeeper.Filename.attestation_cert})\n")
+        StatusKeeper.MATCH_PublicKeys = True
     else:
-        print("❌ Public key in CSR and attestation certificate are different.")
-        StatusKeeper.MATCH_Does_the_public_key_from_CSR_equal_the_public_key_from_the_Attestation_Certificate_FromSlot = False
+        print("❌ Public key in CSR and attestation certificate are different." + '\n' + f"({StatusKeeper.Filename.csr} <-!pub!-> {StatusKeeper.Filename.attestation_cert})\n")
+        StatusKeeper.MATCH_PublicKeys = False
 
 def decode_yubikey_info(attestation_cert, StatusKeeper):
     firmware_version = serial_number = pin_policy = touch_policy = "Not Found"
@@ -314,22 +314,37 @@ def compare_key_serials(StatusKeeper, serial_override):
 
 def print_report_table(StatusKeeper):
     headers = ["Validation", "Result"]
-    tabledata = [
-        ["Serial Trusted?", "✅" if StatusKeeper.MATCH_Serial == True else ("⚠️ (skip)" if StatusKeeper.MATCH_Serial == "skip" else "❌") ],
-        ["CSR & Attest Cert linked", "✅" if StatusKeeper.MATCH_Does_the_public_key_from_CSR_equal_the_public_key_from_the_Attestation_Certificate_FromSlot else "❌"],
-        ["Root signed Intermediate (Model)", "✅" if StatusKeeper.SignCheck.Root2Intermediate else "❌"],
-        ["Intermediate signed Attestation Cert (Slot)", "✅" if StatusKeeper.SignCheck.Intermediate2AttestationCertFromSlot else "❌"],
-        ["Valid Root", "✅" if StatusKeeper.ValidityCheck.Root else "❌"],
-        ["Valid Intermediate (Model)", "✅" if StatusKeeper.ValidityCheck.Intermediate else "❌"],
-        ["Valid Attestation Cert (Slot x)", "✅" if StatusKeeper.ValidityCheck.AttestationCertFromSlot else "❌"],
-        ["Touch Policy Compliancy", "✅" if StatusKeeper.Compliancy.TouchPolicy else "❌"],
-        ["Pin Policy Compliancy", "✅" if StatusKeeper.Compliancy.PinPolicy else "❌"]
-    ]
+    if (StatusKeeper.MATCH_PublicKeys):
+        tabledata = [
+            ["Serial Trusted?", "✅" if StatusKeeper.MATCH_Serial == True else ("⚠️ (skip)" if StatusKeeper.MATCH_Serial == "skip" else "❌") ],
+            ["CSR & Attest Cert Public key match", "✅" if StatusKeeper.MATCH_PublicKeys else "❌"],
+            ["Root signed Intermediate (Model)", "✅" if StatusKeeper.SignCheck.Root2Intermediate else "❌"],
+            ["Intermediate signed Attestation Cert (Slot)", "✅" if StatusKeeper.SignCheck.Intermediate2AttestationCertFromSlot else "❌"],
+            ["Valid Root", "✅" if StatusKeeper.ValidityCheck.Root else "❌"],
+            ["Valid Intermediate (Model)", "✅" if StatusKeeper.ValidityCheck.Intermediate else "❌"],
+            ["Valid Attestation Cert (Slot x)", "✅" if StatusKeeper.ValidityCheck.AttestationCertFromSlot else "❌"],
+            ["Touch Policy Compliancy", "✅" if StatusKeeper.Compliancy.TouchPolicy else "❌"],
+            ["Pin Policy Compliancy", "✅" if StatusKeeper.Compliancy.PinPolicy else "❌"]
+        ]
+    elif (StatusKeeper.MATCH_PublicKeys == False)  :
+        tabledata = [
+            ["Serial Trusted?", "⍻" if StatusKeeper.MATCH_Serial == True else ("⚠️ (skip)" if StatusKeeper.MATCH_Serial == "skip" else "❌") ],
+            ["CSR & Attest Cert Public key match", "⍻" if StatusKeeper.MATCH_PublicKeys else "❌"],
+            ["Root signed Intermediate (Model)", "⍻" if StatusKeeper.SignCheck.Root2Intermediate else "❌"],
+            ["Intermediate signed Attestation Cert (Slot)", "⍻" if StatusKeeper.SignCheck.Intermediate2AttestationCertFromSlot else "❌"],
+            ["Valid Root", "⍻" if StatusKeeper.ValidityCheck.Root else "❌"],
+            ["Valid Intermediate (Model)", "⍻" if StatusKeeper.ValidityCheck.Intermediate else "❌"],
+            ["Valid Attestation Cert (Slot x)", "⍻" if StatusKeeper.ValidityCheck.AttestationCertFromSlot else "❌"],
+            ["Touch Policy Compliancy", "⍻" if StatusKeeper.Compliancy.TouchPolicy else "❌"],
+            ["Pin Policy Compliancy", "⍻" if StatusKeeper.Compliancy.PinPolicy else "❌"]
+        ]
 
     print("\n")
     print("::Report::")    
     print(tabulate(tabledata, headers=headers))
-    print("\n")
+    print("------------------------------------------------------")
+    if (StatusKeeper.MATCH_PublicKeys == False) : print(f"(✅ = OK. ⍻ = Is not valid for CSR '{StatusKeeper.Filename.csr}'.)\n") 
+    else: print("")
     
 
 def inform_user_how_to_proceed(StatusKeeper):
@@ -339,7 +354,7 @@ def inform_user_how_to_proceed(StatusKeeper):
          StatusKeeper.SignCheck.Intermediate2AttestationCertFromSlot == True and
          StatusKeeper.Compliancy.PinPolicy == True and 
          StatusKeeper.Compliancy.TouchPolicy == True and 
-         StatusKeeper.MATCH_Does_the_public_key_from_CSR_equal_the_public_key_from_the_Attestation_Certificate_FromSlot == True):
+         StatusKeeper.MATCH_PublicKeys == True):
         #THEN:
         if StatusKeeper.MATCH_Serial == True :
             StatusKeeper.RESULT_Can_I_safely_sign_this_CertificateSigningRequest_based_on_all_checks = "YES 8x✅ + Serial Trusted ✅"
@@ -387,7 +402,10 @@ def main():
             pin_policy = None
             touch_policy = None
             serial_number = None
-        MATCH_Does_the_public_key_from_CSR_equal_the_public_key_from_the_Attestation_Certificate_FromSlot = None
+        class Filename :
+            csr = None
+            attestation_cert = None
+        MATCH_Publickeys = None # Retired Loud name: Does_the_public_key_from_CSR_equal_the_public_key_from_the_Attestation_Certificate_FromSlot = None
         MATCH_Serial = None
         """
         Contains the information about whether the public key in the Certificate Signing Request (CSR)
@@ -403,6 +421,8 @@ def main():
     attestation_cert = load_certificate(attestation_file)
     intermediate_cert = load_certificate(intermediate_ca_file)
     root_cert = load_certificate(root_ca_file)
+    StatusKeeper.Filename.csr = os.path.basename(csr_file)
+    StatusKeeper.Filename.attestation_cert = os.path.basename(attestation_file)
 
     verify_certificate(attestation_cert, intermediate_cert, root_cert, StatusKeeper)
     check_public_key(csr, attestation_cert, StatusKeeper)
@@ -420,4 +440,27 @@ if __name__ == "__main__":
     main()
 
 
-    
+# ##################################################################################
+#  Special Thanks to the author who wrote the base version of yuibkey_attest.ph.
+#  
+#  Source base version:
+#  https://go.juramento.nl/specialthanks_yubikey-attestation
+#  https://go.juramento.nl/specialthanks_yubikey-attestation_medium
+# ##################################################################################
+#  Version 2 
+#  The following features were added to the base version:
+#
+#  - Explicit Advice/Guide if signing CSR is wise.
+#  - Configurable Pin & Touch Policies for compliance check.
+#  - Explict Report card regarding checks and policies.
+#  - Yubikey Serial comparison (annoying, but needed).
+#  - Support for known Serials 'address book' in user's environment variable.
+#  - Informative Help page.
+#
+#  Links to this script:
+#  https://go.juramento.nl/Yubikey-Attestation-Aid
+#  https://go.juramento.nl/yubiattest
+# ##################################################################################
+# Future
+#  ~Maybe a GUI
+# ##################################################################################
